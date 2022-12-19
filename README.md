@@ -1,0 +1,1 @@
+# ginsta-social-media-manager
