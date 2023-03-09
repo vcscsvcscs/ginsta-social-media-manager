@@ -24,8 +24,8 @@ var (
 	twoFactorAuthentication = flag.String("twofactorauthentication", os.Getenv("INSTAGRAM_2FA"), "Instagram 2FA code")
 	cert                    = flag.String("cert", "./keys/cert.pem", "Specify the path of TLS cert")
 	key                     = flag.String("key", "./keys/key.pem", "Specify the path of TLS key")
-	httpsPort               = flag.Int("httpsport", 443, "HTTPS port")
-	httpPort                = flag.Int("httpport", 80, "HTTP port")
+	httpsPort               = flag.String("httpsport", "443", "HTTPS port")
+	httpPort                = flag.String("httpport", "80", "HTTP port")
 	insta                   *goinsta.Instagram
 	searchbar               *goinsta.Search
 	botconfigs              *BotConfigs
@@ -51,8 +51,39 @@ func init() {
 		// Use the following code if you need to write the logs to file and console at the same time.
 		gin.DefaultWriter = io.MultiWriter(f, os.Stderr)
 	}
+	router.Use(authenticatorMiddleware)
+	_, keyMissingError := os.Stat(*key)
+	_, certMissingError := os.Stat(*cert)
+	if keyMissingError == nil && certMissingError == nil {
+		server = &http.Server{
+			Addr:         *httpsPort,
+			Handler:      router,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		go func() {
+			log.Println("Server starts at port ", *httpsPort)
+			if err := server.ListenAndServeTLS(*cert, *key); err != nil && errors.Is(err, http.ErrServerClosed) {
+				log.Printf("%s\n", err)
+			}
+		}()
+		// Start the HTTP server and redirect all incoming connections to HTTPS
+		go log.Fatal(http.ListenAndServe(*httpPort, http.HandlerFunc(RedirectToHttps)))
+	} else {
+		server = &http.Server{
+			Addr:         *httpPort,
+			Handler:      router,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		go func() {
+			log.Println("Server starts at port ", *httpPort)
+			if err := server.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
+				log.Printf("%s\n", err)
+			}
+		}()
+	}
 }
-
 func login() {
 	if _, err := os.Stat("~/.goinsta"); err == nil {
 		if insta, err = goinsta.Import("~/.goinsta"); err != nil {
@@ -99,7 +130,7 @@ func iteration() {
 func main() {
 	flag.Parse()
 	login()
-	iteration()
+	go iteration()
 	// Wait for interrupt signal to gracefully shutdown the server with
 	// a timeout of 5 seconds.
 	quit := make(chan os.Signal, 1)

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-//safe for concurrent use
+// safe for concurrent use
 type BotConfigs struct {
 	mu                     sync.Mutex
 	timeBetweenRequestsMax int
